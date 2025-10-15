@@ -1,0 +1,17 @@
+{
+    "minimum": {
+        "epochs": 1,
+        "batch_size": 16,
+        "learning_rate": 1e-3
+    },
+    "dev": {
+        "epochs": 10,
+        "batch_size": 32,
+        "learning_rate": 0.01
+    },
+    "prod": {
+        "epochs": 50,
+        "batch_size": 64,
+        "learning_rate": 1e-4
+    }
+}

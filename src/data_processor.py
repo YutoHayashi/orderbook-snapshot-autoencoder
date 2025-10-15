@@ -1,16 +1,21 @@
 import os
+from typing import TypedDict
 
 import numpy as np
 
 import torch
-device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-effective_depth_level = os.getenv('EFFECTIVE_DEPTH_LEVEL', 10)
+effective_depth_level = int(os.getenv('EFFECTIVE_DEPTH_LEVEL', 20))
 
-def prepare_snap(snap: dict) -> torch.Tensor:
-    if not isinstance(snap, dict) or 'mid_price' not in snap or 'bids' not in snap or 'asks' not in snap:
-        raise ValueError("Invalid snapshot format")
-    
+class OrderType(TypedDict):
+    price: float
+    size: float
+class SnapType(TypedDict):
+    mid_price: float
+    bids: list[OrderType]
+    asks: list[OrderType]
+
+def prepare_snap(snap: SnapType) -> torch.Tensor:
     mid_price = snap.get('mid_price', np.float32(0))
     asks = sorted(snap.get('asks', []), key=lambda x: x.get('price', np.float32(0)))[:effective_depth_level]
     bids = sorted(snap.get('bids', []), key=lambda x: x.get('price', np.float32(0)), reverse=True)[:effective_depth_level]
