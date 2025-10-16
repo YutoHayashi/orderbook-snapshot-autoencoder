@@ -37,7 +37,7 @@ def main() -> None:
     args = parse_args()
     mode = args.get('mode', 'train_and_eval')
     model_path = os.getenv('MODEL_PATH', 'models')
-    effective_depth_level = int(os.getenv('EFFECTIVE_DEPTH_LEVEL', 20))
+    effective_depth_level = int(os.getenv('EFFECTIVE_DEPTH_LEVEL', 10))
     
     trainer = Conv1dAETrainer(**args, effective_depth_level=effective_depth_level, model_path=model_path)
     

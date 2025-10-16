@@ -1,8 +1,10 @@
+from typing import TypedDict
 import os
 import json
 import warnings
 warnings.filterwarnings('ignore')
 
+import numpy as np
 import pandas as pd
 
 import torch
@@ -13,11 +15,47 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 from lightning.pytorch import Trainer
 from lightning.pytorch import LightningModule
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+class OrderType(TypedDict):
+    price: float
+    size: float
+class SnapType(TypedDict):
+    mid_price: float
+    bids: list[OrderType]
+    asks: list[OrderType]
 
-from data_processor import prepare_snap
+def prepare_snap(snap: SnapType, effective_depth_level: int) -> torch.Tensor:
+    mid_price = snap.get('mid_price', np.float32(0))
+    asks = sorted(snap.get('asks', []), key=lambda x: x.get('price', np.float32(0)))[:effective_depth_level]
+    bids = sorted(snap.get('bids', []), key=lambda x: x.get('price', np.float32(0)), reverse=True)[:effective_depth_level]
+    
+    def pad(side):
+        pad_len = effective_depth_level - len(side)
+        if pad_len > 0:
+            side = side + [{"price": mid_price, "size": 0.0}] * pad_len
+        return side
+
+    asks = pad(asks)
+    bids = pad(bids)
+
+    ask_prices = [(a["price"] - mid_price) / mid_price for a in asks]
+    ask_sizes  = [a["size"] for a in asks]
+    bid_prices = [(b["price"] - mid_price) / mid_price for b in bids]
+    bid_sizes  = [b["size"] for b in bids]
+
+    features = np.array(
+        [v for pair in zip(ask_prices, ask_sizes) for v in pair] +
+        [v for pair in zip(bid_prices, bid_sizes) for v in pair],
+        dtype=np.float32
+    )
+
+    return features
+
+def calculate_conv1d_output_length(input_length: int, kernel_size: int, stride: int, padding: int) -> int:
+    """Conv1Dの出力長を計算する関数"""
+    return (input_length + 2 * padding - kernel_size) // stride + 1
 
 class OrderBookDataset(Dataset):
-    def __init__(self, data: pd.DataFrame):
+    def __init__(self, data: pd.DataFrame, effective_depth_level: int):
         if 'json_data' not in data.columns:
             raise ValueError("DataFrame must contain 'json_data' column")
         
@@ -25,6 +63,7 @@ class OrderBookDataset(Dataset):
         data = data.filter(items=['snap_data'])
         
         self.data = data
+        self.effective_depth_level = effective_depth_level
 
     def __len__(self):
         return len(self.data)
@@ -32,91 +71,91 @@ class OrderBookDataset(Dataset):
     def __getitem__(self, idx):
         row = self.data.iloc[idx]
         snap = row['snap_data']
-        x = prepare_snap(snap)  # Shape: (1, 4, effective_depth_level)
-        y = x.clone()  # For autoencoder, target is the same as input
-        return x.squeeze(0), y.squeeze(0)  # Remove batch dimension for DataLoader compatibility
-
-class Conv1dAE(nn.Module):
-    def __init__(self, channels: int = 4, latent_dim: int = 64, K: int = 20):
-        super(Conv1dAE, self).__init__()
-        self.encoder = nn.Sequential(
-            nn.Conv1d(channels, 64, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Conv1d(64, 128, kernel_size=3, stride=2, padding=1),
-            nn.ReLU(),
-            nn.Flatten()
-        )
-        flat_size = 128 * (K // 4)
-        self.fc_enc = nn.Linear(flat_size, latent_dim)
-        self.fc_dec = nn.Linear(latent_dim, flat_size)
-        self.decoder = nn.Sequential(
-            nn.Unflatten(1, (128, K // 4)),
-            nn.ConvTranspose1d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.ReLU(),
-            nn.ConvTranspose1d(64, channels, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        z = self.encoder(x)
-        z = self.fc_enc(z)
-        x_reconstruct = self.fc_dec(z)
-        x_reconstruct = self.decoder(x_reconstruct)
-        return x_reconstruct
+        x = prepare_snap(snap, effective_depth_level=self.effective_depth_level)  # Shape: (4 * K,)
+        return torch.tensor(x, dtype=torch.float32).unsqueeze(0) # Shape: (1, 4 * K)
 
 class FoecastingConv1dAE(LightningModule):
     def __init__(self,
-                 channels: int = 4,
-                 latent_dim: int = 64,
-                 K: int = 20,
-                 rl: float = 1e-3):
+                 channels: int,
+                 latent_dim: int,
+                 K: int,
+                 rl: float):
         super(FoecastingConv1dAE, self).__init__()
         self.save_hyperparameters()
-        self.model = Conv1dAE(channels, latent_dim, K)
         self.loss_fn = nn.MSELoss()
         self.lr = rl
+        
+        input_len = channels * K  # 4 * 10 = 40
+        
+        # Encoder: (1, 40) -> (32, encoded_len)
+        self.encoder = nn.Sequential(
+            nn.Conv1d(1, 32, kernel_size=3, stride=2, padding=1),  # (1, 40) -> (32, 20)
+            nn.ReLU(),
+            nn.Conv1d(32, 64, kernel_size=3, stride=2, padding=1), # (32, 20) -> (64, 10)
+            nn.ReLU(),
+            nn.Conv1d(64, 32, kernel_size=3, stride=2, padding=1), # (64, 10) -> (32, 5)
+            nn.ReLU()
+        )
+        
+        encoded_len = input_len
+        # Layer 1: kernel=3, stride=2, padding=1
+        encoded_len = calculate_conv1d_output_length(encoded_len, kernel_size=3, stride=2, padding=1)  # 40 -> 20
+        # Layer 2: kernel=3, stride=2, padding=1  
+        encoded_len = calculate_conv1d_output_length(encoded_len, kernel_size=3, stride=2, padding=1)  # 20 -> 10
+        # Layer 3: kernel=3, stride=2, padding=1
+        encoded_len = calculate_conv1d_output_length(encoded_len, kernel_size=3, stride=2, padding=1)  # 10 -> 5
+        
+        self.encoded_size = 32 * encoded_len  # 32 channels * 5 length = 160
+        
+        self.flatten = nn.Flatten()
+        self.fc_mu = nn.Linear(self.encoded_size, latent_dim)
+        self.fc_dec = nn.Linear(latent_dim, self.encoded_size)
+        
+        # Decoder: (32, encoded_len) -> (1, 40)
+        self.decoder = nn.Sequential(
+            nn.ConvTranspose1d(32, 64, kernel_size=3, stride=2, padding=1, output_padding=1), # (32, 5) -> (64, 10)
+            nn.ReLU(),
+            nn.ConvTranspose1d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1), # (64, 10) -> (32, 20)
+            nn.ReLU(),
+            nn.ConvTranspose1d(32, 1, kernel_size=3, stride=2, padding=1, output_padding=1)   # (32, 20) -> (1, 40)
+        )
     
     def forward(self, x):
-        return self.model(x)
+        # Encode
+        z = self.encoder(x)  # (batch_size, 32, encoded_len)
+        z_flat = self.flatten(z)  # (batch_size, 32 * encoded_len)
+        latent = self.fc_mu(z_flat)  # (batch_size, latent_dim)
+        
+        # Decode
+        z_reconstructed = self.fc_dec(latent)  # (batch_size, 32 * encoded_len)
+        z_reshaped = z_reconstructed.view(z.size(0), 32, -1)  # (batch_size, 32, encoded_len)
+        x_hat = self.decoder(z_reshaped)  # (batch_size, 1, input_len)
+        
+        return x_hat
     
     def training_step(self, batch, batch_idx):
-        x, y = batch
-        y_hat = self.model(x)
-        loss = self.loss_fn(y_hat, y)
+        x = batch
+        y_hat = self(x)
+        loss = self.loss_fn(y_hat, x)
         self.log('train_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
         return loss
     
     def validation_step(self, batch, batch_idx):
-        x, y = batch
-        y_hat = self.model(x)
-        loss = self.loss_fn(y_hat, y)
+        x = batch
+        y_hat = self(x)
+        loss = self.loss_fn(y_hat, x)
         self.log('val_loss', loss, prog_bar=True)
         return loss
     
     def test_step(self, batch, batch_idx):
-        x, y = batch
-        y_hat = self.model(x)
-        loss = self.loss_fn(y_hat, y)
+        x = batch
+        y_hat = self(x)
+        loss = self.loss_fn(y_hat, x)
         self.log('test_loss', loss, prog_bar=True)
         return loss
     
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        return optimizer
-
-def create_dataset(df: pd.DataFrame) -> tuple[OrderBookDataset, OrderBookDataset, OrderBookDataset]:
-    train_cutoff = df.index.max() * 0.6
-    validation_cutoff = df.index.max() * 0.8
-    
-    training = OrderBookDataset(df[lambda x: x.index <= train_cutoff])
-    validation = OrderBookDataset(df[lambda x: (x.index > train_cutoff) & (x.index <= validation_cutoff)])
-    testing = OrderBookDataset(df[lambda x: x.index > validation_cutoff])
-    
-    print(f"Number of training samples: {len(training)}")
-    print(f"Number of validation samples: {len(validation)}")
-    print(f"Number of testing samples: {len(testing)}")
-    
-    return training, validation, testing
+        return torch.optim.Adam(self.parameters(), lr=self.lr)
 
 def load_ae_model(model_path: str) -> FoecastingConv1dAE:
     print("Loading the best model from checkpoint...")
@@ -139,7 +178,7 @@ class Conv1dAETrainer:
                  epochs: int = 15,
                  batch_size: int = 32,
                  learning_rate: float = 1e-3,
-                 effective_depth_level: int = 20,
+                 effective_depth_level: int = 10,
                  model_path: str = 'models',
                  **kwargs):
         self.data_path = data_path
@@ -151,7 +190,21 @@ class Conv1dAETrainer:
         
         self.df = pd.read_csv(data_path)
         
-        self.training_dataset, self.validation_dataset, self.testing_dataset = create_dataset(self.df)
+        self.training_dataset, self.validation_dataset, self.testing_dataset = self.create_dataset(self.df)
+    
+    def create_dataset(self, df: pd.DataFrame) -> tuple[OrderBookDataset, OrderBookDataset, OrderBookDataset]:
+        train_cutoff = df.index.max() * 0.6
+        validation_cutoff = df.index.max() * 0.8
+        
+        training = OrderBookDataset(df[lambda x: x.index <= train_cutoff], effective_depth_level=self.effective_depth_level)
+        validation = OrderBookDataset(df[lambda x: (x.index > train_cutoff) & (x.index <= validation_cutoff)], effective_depth_level=self.effective_depth_level)
+        testing = OrderBookDataset(df[lambda x: x.index > validation_cutoff], effective_depth_level=self.effective_depth_level)
+        
+        print(f"Number of training samples: {len(training)}")
+        print(f"Number of validation samples: {len(validation)}")
+        print(f"Number of testing samples: {len(testing)}")
+        
+        return training, validation, testing
     
     def train(self):
         print(f"Starting training...")
