@@ -15,6 +15,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 from lightning.pytorch import Trainer
 from lightning.pytorch import LightningModule
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+
 class OrderType(TypedDict):
     price: float
     size: float
