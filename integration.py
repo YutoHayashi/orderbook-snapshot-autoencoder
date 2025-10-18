@@ -15,6 +15,8 @@ ae = load_ae_model(model_path)
 hparams = ae.hparams
 effective_depth_level = hparams['K']
 
+pca_processor = load_pca_model(model_path)
+
 def encode_snapshot(snap: SnapType, pca_components: Optional[int] = None):
     with torch.no_grad():
         x = prepare_snap(snap, effective_depth_level)
@@ -24,10 +26,8 @@ def encode_snapshot(snap: SnapType, pca_components: Optional[int] = None):
         latent_features = ae.encoder(x).flatten()
         latent_features = latent_features.detach().cpu()
     
-    if pca_components is None:
+    if pca_components is None or pca_processor is None:
         return latent_features
-    
-    pca_processor = load_pca_model(model_path)
     
     if pca_processor.n_components != pca_components:
         raise ValueError(f"PCA model has {pca_processor.n_components} components, but {pca_components} requested.")

@@ -176,12 +176,12 @@ def load_ae_model(model_path: str) -> FoecastingConv1dAE:
     
     return model
 
-def load_pca_model(model_path: str) -> PCAProcessor:
+def load_pca_model(model_path: str) -> PCAProcessor|None:
     print("Loading PCA model...")
     pca_path = os.path.join(os.path.dirname(__file__), model_path, 'pca_processor.pkl')
     
     if not os.path.exists(pca_path):
-        raise FileNotFoundError(f"PCA model not found at {pca_path}")
+        return None
     
     with open(pca_path, 'rb') as f:
         pca_processor = pickle.load(f)
