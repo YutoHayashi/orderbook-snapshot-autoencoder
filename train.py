@@ -18,6 +18,7 @@ def parse_args() -> dict:
     parser.add_argument('--epochs', type=int, required=False, default=15, help='Number of training epochs')
     parser.add_argument('--batch_size', type=int, required=False, default=32, help='Batch size for training')
     parser.add_argument('--learning_rate', type=float, required=False, default=1e-3, help='Learning rate for optimizer')
+    parser.add_argument('--pca_components', type=int, required=False, default=50, help='Number of PCA components')
     parser.add_argument('--mode', type=str, choices=['train_and_eval', 'train', 'eval'], required=False, default='train_and_eval', help='Mode: train or evaluate.')
     
     args = parser.parse_args()

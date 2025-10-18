@@ -1,6 +1,7 @@
 from typing import TypedDict
 import os
 import json
+import pickle
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -15,6 +16,8 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 from lightning.pytorch import Trainer
 from lightning.pytorch import LightningModule
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+
+from pca_processor import PCAProcessor
 
 class OrderType(TypedDict):
     price: float
@@ -173,6 +176,19 @@ def load_ae_model(model_path: str) -> FoecastingConv1dAE:
     
     return model
 
+def load_pca_model(model_path: str) -> PCAProcessor:
+    print("Loading PCA model...")
+    pca_path = os.path.join(os.path.dirname(__file__), model_path, 'pca_processor.pkl')
+    
+    if not os.path.exists(pca_path):
+        raise FileNotFoundError(f"PCA model not found at {pca_path}")
+    
+    with open(pca_path, 'rb') as f:
+        pca_processor = pickle.load(f)
+    
+    print(f"Loaded PCA model from {pca_path}")
+    return pca_processor
+
 class Conv1dAETrainer:
     def __init__(self,
                  data_path: str,
@@ -181,6 +197,7 @@ class Conv1dAETrainer:
                  learning_rate: float = 1e-3,
                  effective_depth_level: int = 10,
                  model_path: str = 'models',
+                 pca_components: int = 50,
                  **kwargs):
         self.data_path = data_path
         self.epochs = epochs
@@ -188,6 +205,7 @@ class Conv1dAETrainer:
         self.learning_rate = learning_rate
         self.effective_depth_level = effective_depth_level
         self.model_path = model_path
+        self.pca_components = pca_components
         
         self.df = pd.read_csv(data_path)
         
@@ -248,7 +266,38 @@ class Conv1dAETrainer:
         
         trainer.fit(ae, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
         
+        self.train_pca(ae)
+        
         return ae
+    
+    def train_pca(self, model: FoecastingConv1dAE) -> None:
+        print("Starting PCA training...")
+        model.eval()
+        
+        latent_features_list = []
+        train_dataloader = DataLoader(self.training_dataset, batch_size=self.batch_size, shuffle=False, num_workers=0)
+        
+        with torch.no_grad():
+            for batch in train_dataloader:
+                batch = batch.to(next(model.parameters()).device)
+                encoded = model.encoder(batch)
+                encoded_flat = model.flatten(encoded)
+                
+                for feature in encoded_flat:
+                    latent_features_list.append(feature.detach().cpu())
+        
+        pca_processor = PCAProcessor(n_components=self.pca_components)
+        pca_processor.fit(latent_features_list)
+        
+        pca_path = os.path.join(os.path.dirname(__file__), self.model_path, 'pca_processor.pkl')
+        os.makedirs(os.path.dirname(pca_path), exist_ok=True)
+        
+        with open(pca_path, 'wb') as f:
+            pickle.dump(pca_processor, f)
+        
+        print(f"PCA training completed. Model saved to {pca_path}")
+        print(f"PCA components: {self.pca_components}")
+        print(f"Training samples: {len(latent_features_list)}")
     
     def evaluate(self, model: FoecastingConv1dAE) -> None:
         print("Starting evaluation...")
