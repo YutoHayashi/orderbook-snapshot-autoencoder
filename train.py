@@ -8,7 +8,7 @@ import json
 from dotenv import load_dotenv
 load_dotenv()
 
-from trainer import Conv1dAETrainer, load_ae_model
+from ae_trainer import Conv1dAETrainer, load_ae_model
 
 def parse_args() -> dict:
     parser = argparse.ArgumentParser(description="Train Conv1d Autoencoder")
