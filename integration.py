@@ -17,8 +17,10 @@ def encode_snapshot(snap: SnapType):
     with torch.no_grad():
         x = prepare_snap(snap, effective_depth_level)
         x = torch.tensor(x, dtype=torch.float32).unsqueeze(0)
+        device = next(ae.parameters()).device
+        x = x.to(device)
         latent_features = ae.encoder(x).flatten()
-    return latent_features.detach()
+    return latent_features.detach().cpu()
 
 if __name__ == "__main__":
     import json
