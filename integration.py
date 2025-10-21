@@ -1,15 +1,9 @@
-import os
-import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
-
-from dotenv import load_dotenv
-load_dotenv()
-model_path = os.getenv('MODEL_PATH', 'models')
-
 import torch
 from typing import Optional
 
 from ae_trainer import SnapType, load_ae_model, prepare_snap, load_pca_model
+
+model_path = 'models'
 
 ae = load_ae_model(model_path)
 hparams = ae.hparams
