@@ -163,9 +163,9 @@ class FoecastingConv1dAE(LightningModule):
 
 def load_ae_model(model_path: str) -> FoecastingConv1dAE:
     print("Loading the best model from checkpoint...")
-    checkpoint_files = [f for f in os.listdir(model_path) if f.endswith('.ckpt')]
+    checkpoint_files = [f for f in os.listdir(model_path) if f.startswith('conv1dae-') and f.endswith('.ckpt')]
     if not checkpoint_files:
-        raise FileNotFoundError("No checkpoint files found in the specified output path.")
+        raise FileNotFoundError("No conv1dae checkpoint files found in the specified output path.")
     
     latest_checkpoint = max(checkpoint_files, key=lambda f: os.path.getctime(os.path.join(model_path, f)))
     checkpoint_path = os.path.join(model_path, latest_checkpoint)
