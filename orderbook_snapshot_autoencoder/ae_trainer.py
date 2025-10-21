@@ -17,7 +17,7 @@ from lightning.pytorch import Trainer
 from lightning.pytorch import LightningModule
 from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 
-from pca_processor import PCAProcessor
+from .pca_processor import PCAProcessor
 
 class OrderType(TypedDict):
     price: float

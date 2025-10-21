@@ -2,7 +2,7 @@ import os
 import argparse
 import json
 
-from ae_trainer import Conv1dAETrainer, load_ae_model
+from .ae_trainer import Conv1dAETrainer, load_ae_model
 
 model_path = 'models'
 effective_depth_level = 10

@@ -1,7 +1,7 @@
 import torch
 from typing import Optional
 
-from ae_trainer import SnapType, load_ae_model, prepare_snap, load_pca_model
+from .ae_trainer import SnapType, load_ae_model, prepare_snap, load_pca_model
 
 model_path = 'models'
 

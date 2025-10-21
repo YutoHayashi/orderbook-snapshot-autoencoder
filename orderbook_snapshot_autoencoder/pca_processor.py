@@ -4,9 +4,7 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from typing import Union, List
 
-
-class PCAProcessor:
-    
+class PCAProcessor:    
     def __init__(self, n_components: int, standardize: bool = True):
         self.n_components = n_components
         self.standardize = standardize
