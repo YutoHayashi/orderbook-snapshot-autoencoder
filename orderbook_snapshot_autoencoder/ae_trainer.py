@@ -163,13 +163,12 @@ class FoecastingConv1dAE(LightningModule):
 
 def load_ae_model(model_path: str) -> FoecastingConv1dAE:
     print("Loading the best model from checkpoint...")
-    checkpoint_dir = os.path.join(os.path.dirname(__file__), model_path)
-    checkpoint_files = [f for f in os.listdir(checkpoint_dir) if f.endswith('.ckpt')]
+    checkpoint_files = [f for f in os.listdir(model_path) if f.endswith('.ckpt')]
     if not checkpoint_files:
         raise FileNotFoundError("No checkpoint files found in the specified output path.")
     
-    latest_checkpoint = max(checkpoint_files, key=lambda f: os.path.getctime(os.path.join(checkpoint_dir, f)))
-    checkpoint_path = os.path.join(checkpoint_dir, latest_checkpoint)
+    latest_checkpoint = max(checkpoint_files, key=lambda f: os.path.getctime(os.path.join(model_path, f)))
+    checkpoint_path = os.path.join(model_path, latest_checkpoint)
     
     model = FoecastingConv1dAE.load_from_checkpoint(checkpoint_path, map_location='cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Loaded model from {checkpoint_path}")
@@ -178,7 +177,7 @@ def load_ae_model(model_path: str) -> FoecastingConv1dAE:
 
 def load_pca_model(model_path: str) -> PCAProcessor|None:
     print("Loading PCA model...")
-    pca_path = os.path.join(os.path.dirname(__file__), model_path, 'pca_processor.pkl')
+    pca_path = os.path.join(model_path, 'pca_processor.pkl')
     
     if not os.path.exists(pca_path):
         return None
@@ -247,7 +246,7 @@ class Conv1dAETrainer:
         )
         
         checkpoint_callback = ModelCheckpoint(
-            dirpath=os.path.join(os.path.dirname(__file__), self.model_path),
+            dirpath=self.model_path,
             filename="conv1dae-{epoch:02d}-{val_loss:.4f}",
             monitor="val_loss",
             save_top_k=1,
@@ -289,7 +288,7 @@ class Conv1dAETrainer:
         pca_processor = PCAProcessor(n_components=self.pca_components)
         pca_processor.fit(latent_features_list)
         
-        pca_path = os.path.join(os.path.dirname(__file__), self.model_path, 'pca_processor.pkl')
+        pca_path = os.path.join(self.model_path, 'pca_processor.pkl')
         os.makedirs(os.path.dirname(pca_path), exist_ok=True)
         
         with open(pca_path, 'wb') as f:
