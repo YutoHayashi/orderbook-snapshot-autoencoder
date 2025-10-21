@@ -3,6 +3,9 @@ import argparse
 import json
 from importlib import resources
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from .ae_trainer import Conv1dAETrainer, load_ae_model
 
 model_path = os.getenv('MODEL_PATH', 'models')
