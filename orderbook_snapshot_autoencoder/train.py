@@ -1,11 +1,12 @@
+import os
 import argparse
 import json
 from importlib import resources
 
 from .ae_trainer import Conv1dAETrainer, load_ae_model
 
-model_path = 'models'
-effective_depth_level = 10
+model_path = os.getenv('MODEL_PATH', 'models')
+effective_depth_level = int(os.getenv('AE_EFFECTIVE_DEPTH_LEVEL', '20'))
 
 def parse_args() -> dict:
     parser = argparse.ArgumentParser(description="Train Conv1d Autoencoder")

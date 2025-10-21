@@ -1,9 +1,11 @@
+import os
+
 import torch
 from typing import Optional
 
 from .ae_trainer import SnapType, load_ae_model, prepare_snap, load_pca_model
 
-model_path = 'models'
+model_path = os.getenv('MODEL_PATH', 'models')
 
 ae = load_ae_model(model_path)
 hparams = ae.hparams

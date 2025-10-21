@@ -1,6 +1,7 @@
 lightning
 numpy<2
 pandas
+python-dotenv
 pytorch-forecasting
 scikit-learn
 torch
