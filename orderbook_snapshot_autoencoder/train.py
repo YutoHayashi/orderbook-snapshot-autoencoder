@@ -1,6 +1,6 @@
-import os
 import argparse
 import json
+from importlib import resources
 
 from .ae_trainer import Conv1dAETrainer, load_ae_model
 
@@ -20,7 +20,7 @@ def parse_args() -> dict:
     
     args = parser.parse_args()
     
-    with open(os.path.join(os.path.dirname(__file__), 'presets.json'), 'r') as f:
+    with resources.open_text("orderbook_snapshot_autoencoder", "presets.json") as f:
         preset = json.load(f).get(args.preset, {})
     
     args = vars(args) | preset
