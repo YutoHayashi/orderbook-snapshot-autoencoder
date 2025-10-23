@@ -16,10 +16,10 @@ def parse_args() -> dict:
     
     parser.add_argument('--preset', type=str, choices=['minimum', 'dev', 'prod'], required=False, default='prod', help='Preset configuration to use.')
     parser.add_argument('--data_path', type=str, required=False, default='csv/board_snapshots.csv', help='Path to the training data CSV file')
-    parser.add_argument('--epochs', type=int, required=False, default=15, help='Number of training epochs')
-    parser.add_argument('--batch_size', type=int, required=False, default=32, help='Batch size for training')
-    parser.add_argument('--learning_rate', type=float, required=False, default=1e-3, help='Learning rate for optimizer')
-    parser.add_argument('--pca_components', type=int, required=False, default=50, help='Number of PCA components')
+    parser.add_argument('--epochs', type=int, required=False, help='Number of training epochs')
+    parser.add_argument('--batch_size', type=int, required=False, help='Batch size for training')
+    parser.add_argument('--learning_rate', type=float, required=False, help='Learning rate for optimizer')
+    parser.add_argument('--pca_components', type=int, required=False, help='Number of PCA components')
     parser.add_argument('--mode', type=str, choices=['train_and_eval', 'train', 'eval'], required=False, default='train_and_eval', help='Mode: train or evaluate.')
     
     args = parser.parse_args()
@@ -27,7 +27,7 @@ def parse_args() -> dict:
     with resources.open_text("orderbook_snapshot_autoencoder", "presets.json") as f:
         preset = json.load(f).get(args.preset, {})
     
-    args = preset | vars(args)
+    args = {**preset, **{k: v for k, v in vars(args).items() if v is not None}}
     
     print("Using configuration:")
     for key, value in args.items():
