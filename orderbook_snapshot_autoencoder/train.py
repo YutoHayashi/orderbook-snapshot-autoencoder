@@ -27,7 +27,7 @@ def parse_args() -> dict:
     with resources.open_text("orderbook_snapshot_autoencoder", "presets.json") as f:
         preset = json.load(f).get(args.preset, {})
     
-    args = vars(args) | preset
+    args = preset | vars(args)
     
     print("Using configuration:")
     for key, value in args.items():
