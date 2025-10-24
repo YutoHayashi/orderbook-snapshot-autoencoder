@@ -8,8 +8,9 @@ load_dotenv()
 
 from .ae_trainer import Conv1dAETrainer, load_ae_model
 
-model_path = os.getenv('MODEL_PATH', 'models')
 effective_depth_level = int(os.getenv('AE_EFFECTIVE_DEPTH_LEVEL', '20'))
+pca_components = int(os.getenv('PCA_COMPONENTS', '0'))
+model_path = os.getenv('MODEL_PATH', 'models')
 
 def parse_args() -> dict:
     parser = argparse.ArgumentParser(description="Train Conv1d Autoencoder")
@@ -19,7 +20,6 @@ def parse_args() -> dict:
     parser.add_argument('--epochs', type=int, required=False, help='Number of training epochs')
     parser.add_argument('--batch_size', type=int, required=False, help='Batch size for training')
     parser.add_argument('--learning_rate', type=float, required=False, help='Learning rate for optimizer')
-    parser.add_argument('--pca_components', type=int, required=False, help='Number of PCA components')
     parser.add_argument('--mode', type=str, choices=['train_and_eval', 'train', 'eval'], required=False, default='train_and_eval', help='Mode: train or evaluate.')
     
     args = parser.parse_args()
@@ -39,7 +39,12 @@ def main() -> None:
     args = parse_args()
     mode = args.get('mode', 'train_and_eval')
     
-    trainer = Conv1dAETrainer(**args, effective_depth_level=effective_depth_level, model_path=model_path)
+    trainer = Conv1dAETrainer(
+        **args,
+        effective_depth_level=effective_depth_level,
+        pca_components=pca_components,
+        model_path=model_path
+    )
     
     trained_model = None
     

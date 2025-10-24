@@ -195,16 +195,16 @@ class Conv1dAETrainer:
                  batch_size: int = 32,
                  learning_rate: float = 1e-3,
                  effective_depth_level: int = 10,
+                 pca_components: int = 0,
                  model_path: str = 'models',
-                 pca_components: int = 50,
                  **kwargs):
         self.data_path = data_path
         self.epochs = epochs
         self.batch_size = batch_size
         self.learning_rate = learning_rate
         self.effective_depth_level = effective_depth_level
-        self.model_path = model_path
         self.pca_components = pca_components
+        self.model_path = model_path
         
         self.df = pd.read_csv(data_path)
         
@@ -265,7 +265,8 @@ class Conv1dAETrainer:
         
         trainer.fit(ae, train_dataloaders=train_dataloader, val_dataloaders=val_dataloader)
         
-        self.train_pca(ae)
+        if (self.pca_components > 0):
+            self.train_pca(ae)
         
         return ae
     

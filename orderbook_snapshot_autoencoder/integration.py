@@ -9,6 +9,7 @@ from typing import Optional
 from .ae_trainer import SnapType, load_ae_model, prepare_snap, load_pca_model
 
 model_path = os.getenv('MODEL_PATH', 'models')
+pca_components = int(os.getenv('PCA_COMPONENTS', '0'))
 
 ae = load_ae_model(model_path)
 hparams = ae.hparams
@@ -16,7 +17,7 @@ effective_depth_level = hparams['K']
 
 pca_processor = load_pca_model(model_path)
 
-def encode_snapshot(snap: SnapType, pca_components: Optional[int] = None):
+def encode_snapshot(snap: SnapType):
     with torch.no_grad():
         x = prepare_snap(snap, effective_depth_level)
         x = torch.tensor(x, dtype=torch.float32).unsqueeze(0)
@@ -25,7 +26,7 @@ def encode_snapshot(snap: SnapType, pca_components: Optional[int] = None):
         latent_features = ae.encoder(x).flatten()
         latent_features = latent_features.detach().cpu()
     
-    if pca_components is None or pca_processor is None:
+    if pca_components == 0 or pca_processor is None:
         return latent_features
     
     if pca_processor.n_components != pca_components:
@@ -46,5 +47,5 @@ if __name__ == "__main__":
     row = df.iloc[0]
     snap = row['snap_data']
     
-    latent_features = encode_snapshot(snap, pca_components=40)
+    latent_features = encode_snapshot(snap)
     print("Latent representation:", latent_features)
