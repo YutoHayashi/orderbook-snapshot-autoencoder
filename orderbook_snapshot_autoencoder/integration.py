@@ -23,8 +23,9 @@ def encode_snapshot(snap: SnapType):
         x = torch.tensor(x, dtype=torch.float32).unsqueeze(0)
         device = next(ae.parameters()).device
         x = x.to(device)
-        latent_features = ae.encoder(x).flatten()
-        latent_features = latent_features.detach().cpu()
+        latent_flattened = ae.encoder(x).flatten()
+        latent_vec = ae.fc_mu(latent_flattened)
+        latent_features = latent_vec.detach().cpu()
     
     if pca_components == 0 or pca_processor is None:
         return latent_features
