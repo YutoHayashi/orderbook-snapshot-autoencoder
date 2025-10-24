@@ -22,6 +22,7 @@ from .pca_processor import PCAProcessor
 class OrderType(TypedDict):
     price: float
     size: float
+
 class SnapType(TypedDict):
     mid_price: float
     bids: list[OrderType]
@@ -54,10 +55,6 @@ def prepare_snap(snap: SnapType, effective_depth_level: int) -> torch.Tensor:
 
     return features
 
-def calculate_conv1d_output_length(input_length: int, kernel_size: int, stride: int, padding: int) -> int:
-    """Conv1Dの出力長を計算する関数"""
-    return (input_length + 2 * padding - kernel_size) // stride + 1
-
 class OrderBookDataset(Dataset):
     def __init__(self, data: pd.DataFrame, effective_depth_level: int):
         if 'json_data' not in data.columns:
@@ -82,82 +79,64 @@ class FoecastingConv1dAE(LightningModule):
     def __init__(self,
                  channels: int,
                  latent_dim: int,
-                 K: int,
-                 rl: float):
-        super(FoecastingConv1dAE, self).__init__()
+                 K: int = 10,
+                 lr: float = 1e-3):
+        super().__init__()
         self.save_hyperparameters()
+        self.lr = lr
         self.loss_fn = nn.MSELoss()
-        self.lr = rl
-        
-        input_len = channels * K  # 4 * 10 = 40
-        
-        # Encoder: (1, 40) -> (32, encoded_len)
+
+        input_len = channels * K  # ex: 4×10=40
+
         self.encoder = nn.Sequential(
-            nn.Conv1d(1, 32, kernel_size=3, stride=2, padding=1),  # (1, 40) -> (32, 20)
+            nn.Conv1d(1, 32, kernel_size=3, stride=2, padding=1),  # (1, L) -> (32, L/2)
             nn.ReLU(),
-            nn.Conv1d(32, 64, kernel_size=3, stride=2, padding=1), # (32, 20) -> (64, 10)
+            nn.Conv1d(32, 64, kernel_size=3, stride=2, padding=1),  # (32, L/2) -> (64, L/4)
             nn.ReLU(),
-            nn.Conv1d(64, 32, kernel_size=3, stride=2, padding=1), # (64, 10) -> (32, 5)
-            nn.ReLU()
+            nn.AdaptiveAvgPool1d(4),
+            nn.Flatten(),  # (batch, 64*4)
         )
-        
-        encoded_len = input_len
-        # Layer 1: kernel=3, stride=2, padding=1
-        encoded_len = calculate_conv1d_output_length(encoded_len, kernel_size=3, stride=2, padding=1)  # 40 -> 20
-        # Layer 2: kernel=3, stride=2, padding=1  
-        encoded_len = calculate_conv1d_output_length(encoded_len, kernel_size=3, stride=2, padding=1)  # 20 -> 10
-        # Layer 3: kernel=3, stride=2, padding=1
-        encoded_len = calculate_conv1d_output_length(encoded_len, kernel_size=3, stride=2, padding=1)  # 10 -> 5
-        
-        self.encoded_size = 32 * encoded_len  # 32 channels * 5 length = 160
-        
-        self.flatten = nn.Flatten()
-        self.fc_mu = nn.Linear(self.encoded_size, latent_dim)
-        self.fc_dec = nn.Linear(latent_dim, self.encoded_size)
-        
-        # Decoder: (32, encoded_len) -> (1, 40)
+
+        self.fc_mu = nn.Linear(64 * 4, latent_dim)
+        self.fc_dec = nn.Linear(latent_dim, 64 * 4)
+
         self.decoder = nn.Sequential(
-            nn.ConvTranspose1d(32, 64, kernel_size=3, stride=2, padding=1, output_padding=1), # (32, 5) -> (64, 10)
+            nn.Unflatten(1, (64, 4)),
+            nn.ConvTranspose1d(64, 32, kernel_size=4, stride=2, padding=1),  # -> (32, 8)
             nn.ReLU(),
-            nn.ConvTranspose1d(64, 32, kernel_size=3, stride=2, padding=1, output_padding=1), # (64, 10) -> (32, 20)
+            nn.ConvTranspose1d(32, 16, kernel_size=4, stride=2, padding=1),  # -> (16, 16)
             nn.ReLU(),
-            nn.ConvTranspose1d(32, 1, kernel_size=3, stride=2, padding=1, output_padding=1)   # (32, 20) -> (1, 40)
+            nn.Conv1d(16, 1, kernel_size=3, padding=1),  # -> (1, 16)
         )
-    
+
+        self.final_resize = nn.AdaptiveAvgPool1d(input_len)
+
     def forward(self, x):
-        # Encode
-        z = self.encoder(x)  # (batch_size, 32, encoded_len)
-        z_flat = self.flatten(z)  # (batch_size, 32 * encoded_len)
-        latent = self.fc_mu(z_flat)  # (batch_size, latent_dim)
-        
-        # Decode
-        z_reconstructed = self.fc_dec(latent)  # (batch_size, 32 * encoded_len)
-        z_reshaped = z_reconstructed.view(z.size(0), 32, -1)  # (batch_size, 32, encoded_len)
-        x_hat = self.decoder(z_reshaped)  # (batch_size, 1, input_len)
-        
-        return x_hat
-    
+        z = self.encoder(x)
+        latent = self.fc_mu(z)
+        dec = self.fc_dec(latent)
+        dec = self.decoder(dec)
+        out = self.final_resize(dec)
+        return out
+
     def training_step(self, batch, batch_idx):
-        x = batch
-        y_hat = self(x)
-        loss = self.loss_fn(y_hat, x)
-        self.log('train_loss', loss, on_step=False, on_epoch=True, prog_bar=True)
+        y_hat = self(batch)
+        loss = self.loss_fn(y_hat, batch)
+        self.log('train_loss', loss, on_epoch=True, prog_bar=True)
         return loss
-    
+
     def validation_step(self, batch, batch_idx):
-        x = batch
-        y_hat = self(x)
-        loss = self.loss_fn(y_hat, x)
+        y_hat = self(batch)
+        loss = self.loss_fn(y_hat, batch)
         self.log('val_loss', loss, prog_bar=True)
         return loss
     
     def test_step(self, batch, batch_idx):
-        x = batch
-        y_hat = self(x)
-        loss = self.loss_fn(y_hat, x)
+        y_hat = self(batch)
+        loss = self.loss_fn(y_hat, batch)
         self.log('test_loss', loss, prog_bar=True)
         return loss
-    
+
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=self.lr)
 
@@ -234,7 +213,7 @@ class Conv1dAETrainer:
             channels=4,
             latent_dim=64,
             K=self.effective_depth_level,
-            rl=self.learning_rate
+            lr=self.learning_rate
         )
         
         early_stopping_callback = EarlyStopping(
