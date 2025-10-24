@@ -20,6 +20,7 @@ def parse_args() -> dict:
     parser.add_argument('--epochs', type=int, required=False, help='Number of training epochs')
     parser.add_argument('--batch_size', type=int, required=False, help='Batch size for training')
     parser.add_argument('--learning_rate', type=float, required=False, help='Learning rate for optimizer')
+    parser.add_argument('--latent_dim', type=int, required=False, help='Dimensionality of the latent space')
     parser.add_argument('--mode', type=str, choices=['train_and_eval', 'train', 'eval'], required=False, default='train_and_eval', help='Mode: train or evaluate.')
     
     args = parser.parse_args()

@@ -173,6 +173,7 @@ class Conv1dAETrainer:
                  epochs: int = 15,
                  batch_size: int = 32,
                  learning_rate: float = 1e-3,
+                 latent_dim: int = 16,
                  effective_depth_level: int = 10,
                  pca_components: int = 0,
                  model_path: str = 'models',
@@ -181,6 +182,7 @@ class Conv1dAETrainer:
         self.epochs = epochs
         self.batch_size = batch_size
         self.learning_rate = learning_rate
+        self.latent_dim = latent_dim
         self.effective_depth_level = effective_depth_level
         self.pca_components = pca_components
         self.model_path = model_path
@@ -211,7 +213,7 @@ class Conv1dAETrainer:
         
         ae = FoecastingConv1dAE(
             channels=4,
-            latent_dim=64,
+            latent_dim=self.latent_dim,
             K=self.effective_depth_level,
             lr=self.learning_rate
         )
